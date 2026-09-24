@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from .loader import Document
 
 #: 切块参数变了，索引缓存必须失效，所以写进缓存键里。
-CHUNKER_VERSION = "chunker-2"
+CHUNKER_VERSION = "chunker-3"
 
 CHUNK_SIZE = 300
 
@@ -38,7 +38,9 @@ def chunk_document(document: Document) -> list[Chunk]:
     """一篇文档按固定长度切开，300 字一块。"""
     text = document.text
     chunks: list[Chunk] = []
-    for number, start in enumerate(range(0, len(text) - CHUNK_SIZE, CHUNK_SIZE), start=1):
+    # 上界取到 len(text) 而不是 len(text)-CHUNK_SIZE：否则每篇文档尾部的
+    # 不足一个 CHUNK_SIZE 的那段会被整个丢掉（KB-061 的“小程序”就在尾部）。
+    for number, start in enumerate(range(0, len(text), CHUNK_SIZE), start=1):
         piece = text[start : start + CHUNK_SIZE]
         chunks.append(
             Chunk(

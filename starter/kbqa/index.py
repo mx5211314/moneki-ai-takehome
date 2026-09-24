@@ -21,9 +21,24 @@ B = 0.75
 
 
 def content_key(kb_dir: Path) -> str:
-    """缓存键：三个版本号拼起来哈希一下。改了切块或分词，键就变，缓存自动失效。"""
+    """缓存键：版本号 + 知识库内容指纹。
+
+    版本号变了（改了切块/分词/索引实现）键就变；知识库里任意文件增删、改内容、
+    或评测时整目录替换，文件的大小/修改时间变了键也会变——这样即使不显式 rebuild，
+    索引也能感知知识库变化（契约 §8），不会一直读一份过期的缓存。
+    """
     digest = hashlib.sha256()
     digest.update(("%s|%s|%s\n" % (INDEX_VERSION, CHUNKER_VERSION, TOKENIZER_VERSION)).encode())
+    try:
+        for path in sorted(kb_dir.rglob("*")):
+            if path.is_file() and not path.name.startswith("."):
+                stat = path.stat()
+                digest.update(
+                    ("%s|%d|%d\n" % (path.relative_to(kb_dir), stat.st_size, int(stat.st_mtime)))
+                    .encode("utf-8")
+                )
+    except OSError:
+        pass
     return digest.hexdigest()
 
 

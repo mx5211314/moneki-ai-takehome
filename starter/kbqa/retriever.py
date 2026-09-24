@@ -117,7 +117,8 @@ class Retriever:
             return None
         ends = self._effective_to.get(doc_id)
         # 只有标了“已废止”的才按取代关系挡掉，别的版本照常参与打分。
-        if meta.get("status") == "已废止" and ends and as_of.isoformat() >= ends:
+        # 注意 meta 里的键是 "state"（loader.meta 写入），不是 "status"。
+        if meta.get("state") == "已废止" and ends and as_of.isoformat() >= ends:
             return "该版本自 %s 起已被 %s 取代" % (ends, meta.get("superseded_by"))
         starts = meta.get("effective_from")
         if starts and starts > as_of.isoformat() and doc_id in self._in_chain:
@@ -237,7 +238,9 @@ class Retriever:
             if reason:
                 excluded.add(doc_id)
                 filtered.append({"doc_id": doc_id, "reason": reason})
-        allowed = set(range(len(self.index.chunks)))
+        # 契约 §4：先按元数据过滤，再从“还在场上”的片段里取 top-k。
+        # 否则先取 top-k 再过滤，会让本该有 5 条的结果只剩两三条。
+        allowed = {i for i, chunk in enumerate(self.index.chunks) if chunk.doc_id not in excluded}
 
         scores = self.index.score_terms(self._weights(query), allowed)
         concepts, expansions = self._concept_scores(query, allowed)
@@ -261,7 +264,6 @@ class Retriever:
             )
         adjusted.sort(key=lambda item: (-item[0], item[1]))
 
-        ordered = [self.index.chunks[position] for _, position in adjusted]
         hits: list[Hit] = []
         taken: set[int] = set()
         per_doc: dict[str, int] = {}
@@ -272,8 +274,6 @@ class Retriever:
             per_doc[chunk.doc_id] = per_doc.get(chunk.doc_id, 0) + 1
             taken.add(position)
             hit = self._hit(position, score, filtered)
-            # 第几条命中就取排序里的第几篇文档。
-            hit.doc_id = ordered[len(hits)].doc_id
             hits.append(hit)
             if len(hits) >= top_k:
                 break
