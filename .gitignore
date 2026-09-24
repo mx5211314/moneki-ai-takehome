@@ -1,0 +1,14 @@
+# 虚拟环境
+.venv/
+venv/
+
+# 运行期产物（重建命令会重新生成）
+var/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# 密钥与本地流量日志
+.env
+llm_traffic.jsonl
