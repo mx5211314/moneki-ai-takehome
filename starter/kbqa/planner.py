@@ -262,18 +262,29 @@ class Planner:
         else:
             plan.kind, plan.intent = "summary", "data"
 
-        # 路由：问“多少/多久/几”的就是要数字，问“为什么/原因”的就是要说法。
-        # 两边都走一遍太慢，没必要。
+        # 路由：问“为什么/原因”的就是要说法。
         #
-        # 但问的是制度/规定时（上面已经判成 doc），那句“多久/多少”问的是条款
-        # 本身——“外卖订单多久内可以申请退款”“员工迟到多久算一次”——不是经营
-        # 数字。原来这里无条件改判成取数，于是跑去查全区间营业额，
-        # C01-C08、V01-V03 整片丢分就是这么来的。已经判成 doc 的不再推翻。
-        if plan.kind != "doc" and E.has_any(text, ("多少", "多久", "几")):
-            plan.intent = "data"
-            if plan.kind in ("anomaly", "target", "price"):
-                plan.kind = "summary"
-        elif E.has_any(text, ("为什么", "原因", "怎么回事", "咋回事")):
+        # 原来这里还有一条覆盖：“出现多少/多久/几就强制 intent=data，并把
+        # doc / anomaly / target / price 一律改成 summary”。它对两类题都是错的：
+        #
+        # 1. 问制度时（已判成 doc）被改成查营业额——“外卖订单多久内可以申请
+        #    退款”跑去算全区间净营业额，C01-C08、V01-V03 整片丢分。
+        # 2. 问目标/异常/价格时（anomaly/target/price，本来是 hybrid）被拆成
+        #    纯取数——“618 当天卖了多少份、达到目标了吗”只给数字不给文档引用，
+        #    answer_type 变成 data 而不是 hybrid，H01-H06 全丢。
+        #
+        # 这两种情况上面 _choose_kind 的前半段已经判对了，这里不再推翻。
+        #
+        # 同理，下面这条“问为什么就按文档答”也不能推翻已经判好的取数路线：
+        # “8 月 3 日 S05 的现金支付占比是多少？为什么会这样？”是 payment，
+        # 既要现金占比的数字、也要设备故障的说法，是 hybrid；改回 doc 就只剩
+        # 文档、没有数据证据（H05 就是这样从满分掉到 0 的）。
+        if E.has_any(text, ("为什么", "原因", "怎么回事", "咋回事")) and plan.kind not in (
+            "anomaly",
+            "payment",
+            "target",
+            "price",
+        ):
             plan.intent, plan.kind = "doc", "doc"
 
         plan.slots["asks_why"] = bool(asks_why or abnormal)
