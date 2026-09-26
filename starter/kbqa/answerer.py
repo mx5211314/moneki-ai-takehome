@@ -74,7 +74,14 @@ class Answerer(HybridAnswers):
         candidates = self._candidates(plan, result, require_value=True)
         if not candidates:
             candidates = self._candidates(plan, result, require_value=False)
-        candidates.sort(key=lambda item: (round(item["score"], 2), item["effective_from"]))
+        # 降序：得分高的在前，分数相同时生效日期更新的在前（reverse=True 让
+        # 元组两个维度一起降序，正是注释里说的“以生效日期更新的为准”）。
+        # 改之前这里缺了 reverse，于是最低分的候选排在首位，best 也取到最低分，
+        # 结果“哪篇最不相关就引用哪篇”——C01 该引 KB-013（句子分 0.522），
+        # 实际引了 KB-061（0.125）和 KB-011（0.371）。
+        candidates.sort(
+            key=lambda item: (round(item["score"], 2), item["effective_from"]), reverse=True
+        )
         lines: list[str] = []
         citations: list[dict] = []
         used_terms: set[str] = set()
