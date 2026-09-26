@@ -12,7 +12,7 @@ from typing import Optional
 
 from .aliases import AliasTable, build_alias_table
 from .chunker import CHUNKER_VERSION, Chunk, chunk_documents
-from .loader import Document, load_knowledge_base
+from .loader import LOADER_VERSION, Document, load_knowledge_base
 from .tokenizer import TOKENIZER_VERSION, tokenize
 
 INDEX_VERSION = "bm25-3"
@@ -28,7 +28,12 @@ def content_key(kb_dir: Path) -> str:
     索引也能感知知识库变化（契约 §8），不会一直读一份过期的缓存。
     """
     digest = hashlib.sha256()
-    digest.update(("%s|%s|%s\n" % (INDEX_VERSION, CHUNKER_VERSION, TOKENIZER_VERSION)).encode())
+    #: LOADER_VERSION 也必须进来：loader 改了解析方式（比如给 .html 剥标签），
+    #: 知识库文件本身一个字节都没动，光看 size/mtime 会以为缓存还有效，
+    #: 于是索引一直停在旧解析结果上。
+    digest.update(
+        ("%s|%s|%s|%s\n" % (INDEX_VERSION, CHUNKER_VERSION, TOKENIZER_VERSION, LOADER_VERSION)).encode()
+    )
     try:
         for path in sorted(kb_dir.rglob("*")):
             if path.is_file() and not path.name.startswith("."):

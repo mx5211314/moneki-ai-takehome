@@ -78,6 +78,25 @@ class Document:
 
 
 _HTML_TITLE = re.compile(r"<title>(.*?)</title>", re.S | re.I)
+_SCRIPT_RE = re.compile(r"<(script|style)\b.*?</\1>", re.I | re.S)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+#: 解析方式一变就 +1。它参与索引的 content_key，所以改了 loader 之后
+#: 旧缓存会失效、自动重建——否则文件本身没动，索引会一直停在旧解析结果上。
+LOADER_VERSION = "loader-2"
+
+
+def html_to_text(text: str) -> str:
+    """HTML 只留文字，口径与评测脚本 eval/run_eval.py 的 html_to_text 完全一致。
+
+    契约要求 quote 是原文里真实存在的连续文字，评测会逐字核对。
+    标签留在正文里的话，quote 就长成 `<p><span class="tag">发票</span>` 这样，
+    评测归一化后变成 `<p><spanclass="tag">发票</span>` 的噪音，怎么都对不上——
+    C05 就是这么挂的（quotes_verbatim 直接判不合格）。
+    """
+    text = _SCRIPT_RE.sub(" ", text)
+    text = _TAG_RE.sub(" ", text)
+    return html_module.unescape(text)
 
 
 def decode_bytes(raw: bytes, path: Path, warnings: list[str]) -> str:
@@ -186,10 +205,14 @@ def load_document(path: Path) -> Optional[Document]:
     if fmt == "md":
         meta, text = parse_front_matter(text)
     elif fmt == "html":
-        # html 直接按文本入库，标签也就那么几个，BM25 自己会忽略。
+        # title 要在剥标签之前取，否则 <title> 自己也没了。
         match_title = _HTML_TITLE.search(text)
         html_title = html_module.unescape(match_title.group(1).strip()) if match_title else ""
         meta = {"title": html_title.split("-")[0].strip() or html_title}
+        # 标签必须剥掉：契约要求 quote 是原文里的连续文字，评测逐字核对。
+        # 原来这里写着“html 直接按文本入库，标签也就那么几个，BM25 自己会忽略”，
+        # 但 BM25 忽略不等于 quote 能通过逐字校验——带着标签的 quote 必然挂。
+        text = html_to_text(text)
 
     match = _DOC_ID.match(path.name)
     doc_id = str(meta.get("doc_id") or (match.group(1) if match else "")).strip()
