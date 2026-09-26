@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from .service import Service
@@ -114,3 +115,35 @@ def data_quality() -> dict:
         "data_period": current.data_period,
         "kb_warnings": current.index.warnings,
     }
+
+
+@app.get("/api/stores")
+def stores() -> dict:
+    """门店列表。前端的下拉框从这里取，不写死 S01-S05——换一套数据就变了。"""
+    return {"stores": service().tools.stores()}
+
+
+@app.get("/api/metrics/top_products")
+def metrics_top_products(
+    start: str = Query(...),
+    end: str = Query(...),
+    store_id: Optional[str] = None,
+    limit: int = 10,
+):
+    """第一关看板的 Top N 商品表。契约没规定这个接口，是看板额外需要的。"""
+    bad = _bad_date(start, end)
+    return bad or service().top_products(start, end, store_id, limit)
+
+
+#: 前端看板。契约只规定了 /api/*，这个首页是给人看的入口。
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    page = WEB_DIR / "index.html"
+    if not page.exists():  # 没放前端也不影响接口，给一句提示就行
+        return JSONResponse(
+            status_code=404, content={"error": "看板页面缺失：%s" % page}
+        )
+    return FileResponse(page)

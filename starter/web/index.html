@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>经营看板 + 问答助手</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --line: #e4e7ec; --text: #1f2430;
+    --muted: #6b7280; --accent: #2563eb; --accent-soft: #eaf1ff;
+    --ok: #0f7b46; --warn: #b45309; --danger: #b42318;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  .badge {
+    font-size: 12px; padding: 2px 9px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid #cfe0ff;
+  }
+  .badge.mock { background: #fff7ed; color: var(--warn); border-color: #fed7aa; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 12px; font-weight: 620; }
+  .filters { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input, select, button, textarea {
+    font: inherit; padding: 7px 10px; border: 1px solid var(--line);
+    border-radius: 7px; background: #fff; color: var(--text);
+  }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  button:disabled { opacity: .55; cursor: default; }
+  button.ghost { background: #fff; color: var(--muted); border-color: var(--line); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .kpi { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: #fcfcfd; }
+  .kpi .k { font-size: 12px; color: var(--muted); }
+  .kpi .v { font-size: 22px; font-weight: 650; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--muted); font-weight: 600; background: #fafbfc; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .chart { width: 100%; height: auto; display: block; }
+  .answer { white-space: pre-wrap; background: #fcfcfd; border: 1px solid var(--line);
+            border-radius: 8px; padding: 12px; margin-top: 10px; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  blockquote {
+    margin: 6px 0 0; padding: 7px 10px; border-left: 3px solid var(--accent);
+    background: #f8fafd; font-size: 13px; color: #374151;
+  }
+  pre { background: #0f1420; color: #d8e0f0; padding: 12px; border-radius: 8px;
+        overflow-x: auto; font-size: 12px; margin: 8px 0 0; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+  .err { color: var(--danger); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 860px) { .row2 { grid-template-columns: 1fr; } }
+  .removed { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
+  .removed div { font-size: 12px; color: var(--muted); }
+  .removed b { color: var(--text); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>经营看板 + 问答助手</h1>
+  <span id="mode" class="badge">加载中…</span>
+  <span id="period" class="badge" style="background:#f3f4f6;color:var(--muted);border-color:var(--line)"></span>
+</header>
+
+<!-- 第一关：筛选 + 指标 -->
+<section class="card">
+  <h2>经营指标</h2>
+  <div class="filters">
+    <div class="field">
+      <label>开始日期</label>
+      <input type="date" id="start">
+    </div>
+    <div class="field">
+      <label>结束日期</label>
+      <input type="date" id="end">
+    </div>
+    <div class="field">
+      <label>门店</label>
+      <select id="store"><option value="">全部门店</option></select>
+    </div>
+    <button id="query">查询</button>
+  </div>
+
+  <div class="kpis" id="kpis" style="margin-top:14px"></div>
+  <div id="trend" style="margin-top:14px"></div>
+</section>
+
+<div class="row2">
+  <section class="card">
+    <h2>Top 10 商品</h2>
+    <table id="top">
+      <thead><tr><th>#</th><th>商品</th><th>品类</th><th class="num">净营业额</th><th class="num">销量</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="meta" id="topMeta"></div>
+  </section>
+
+  <section class="card">
+    <h2>数据质量</h2>
+    <div id="quality"></div>
+  </section>
+</div>
+
+<!-- 第三关：问答 -->
+<section class="card">
+  <h2>问答助手</h2>
+  <div class="filters">
+    <input id="question" placeholder="例如：618 当天 S02 的牛肉poke 卖了多少份？达到目标了吗？"
+           style="flex:1;min-width:260px" onkeydown="if(event.key==='Enter')ask()">
+    <button id="send" onclick="ask()">提问</button>
+    <button class="ghost" onclick="newSession()">新会话</button>
+  </div>
+  <div class="meta">会话：<span id="sid">—</span>（同一个会话内可以追问，例如“那 7 月呢？”）</div>
+  <div id="chat"></div>
+</section>
+
+<!-- 第四关：调试面板 -->
+<section class="card">
+  <h2>调试面板（trace）</h2>
+  <div class="meta">每次提问都会留下一条 trace：检索到哪些片段、各自多少分、执行了什么查询、每步耗时。</div>
+  <div id="trace"></div>
+</section>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let sessionId = "web-" + Math.random().toString(36).slice(2, 10);
+$("sid").textContent = sessionId;
+
+const money = v => (v === null || v === undefined) ? "—"
+  : Number(v).toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const int = v => (v === null || v === undefined) ? "—" : Number(v).toLocaleString("zh-CN");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  if (!res.ok) throw new Error("HTTP " + res.status + " " + path);
+  return res.json();
+}
+
+// ---- 初始化 ----------------------------------------------------------------
+async function init() {
+  try {
+    const h = await api("/api/health");
+    $("mode").textContent = "llm_mode = " + h.llm_mode;
+    $("mode").className = "badge" + (h.llm_mode === "mock" ? " mock" : "");
+    $("period").textContent = "数据区间 " + h.data_period.start + " ~ " + h.data_period.end;
+    $("start").value = h.data_period.start;
+    $("start").min = h.data_period.start; $("start").max = h.data_period.end;
+    $("end").value = h.data_period.end;
+    $("end").min = h.data_period.start; $("end").max = h.data_period.end;
+  } catch (e) { $("mode").textContent = "健康检查失败"; $("mode").className = "badge mock"; }
+
+  try {
+    const s = await api("/api/stores");
+    s.stores.forEach(st => {
+      const o = document.createElement("option");
+      o.value = st.store_id;
+      o.textContent = st.store_id + " " + st.store_name;
+      $("store").appendChild(o);
+    });
+  } catch (e) { /* 门店拉不到就只留“全部门店” */ }
+
+  loadQuality();
+  refresh();
+}
+
+// ---- 第一关 ----------------------------------------------------------------
+async function refresh() {
+  const p = new URLSearchParams({start: $("start").value, end: $("end").value});
+  const store = $("store").value;
+  if (store) p.set("store_id", store);
+  const qs = p.toString();
+
+  try {
+    const m = await api("/api/metrics/summary?" + qs);
+    $("kpis").innerHTML = [
+      ["净营业额", "¥" + money(m.net_revenue)],
+      ["有效订单数", int(m.orders)],
+      ["客单价", m.aov === null ? "—" : "¥" + money(m.aov)],
+      ["退款金额", "¥" + money(m.refund_amount)],
+      ["销量", int(m.qty)],
+    ].map(([k, v]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  } catch (e) {
+    $("kpis").innerHTML = `<div class="err">指标加载失败：${esc(e.message)}</div>`;
+  }
+
+  try {
+    const d = await api("/api/metrics/daily?" + qs);
+    $("trend").innerHTML = drawTrend(d.days || []);
+  } catch (e) { $("trend").innerHTML = `<div class="err">趋势加载失败</div>`; }
+
+  try {
+    const t = await api("/api/metrics/top_products?" + qs + "&limit=10");
+    const rows = (t.products || []).map((r, i) => `<tr>
+      <td class="num">${i + 1}</td><td>${esc(r.product_name)}</td><td>${esc(r.product_category)}</td>
+      <td class="num">${money(r.net_revenue)}</td><td class="num">${int(r.qty)}</td></tr>`).join("");
+    $("top").querySelector("tbody").innerHTML = rows || `<tr><td colspan="5">这段时间没有数据</td></tr>`;
+    $("topMeta").textContent = `${$("start").value} ~ ${$("end").value}`
+      + (store ? "（" + store + "）" : "（全部门店）");
+  } catch (e) { $("topMeta").innerHTML = `<span class="err">Top 商品加载失败</span>`; }
+}
+
+function drawTrend(days) {
+  if (!days.length) return `<div class="meta">没有数据</div>`;
+  const w = 900, h = 250, pad = {l: 64, r: 16, t: 16, b: 44};
+  const vals = days.map(d => Number(d.net_revenue) || 0);
+  const max = Math.max(...vals, 1);
+  const n = vals.length;
+  const X = i => pad.l + (n <= 1 ? (w - pad.l - pad.r) / 2 : (w - pad.l - pad.r) * i / (n - 1));
+  const Y = v => h - pad.b - (h - pad.t - pad.b) * (v / max);
+  const line = vals.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const area = `${line} L${X(n - 1).toFixed(1)},${(h - pad.b)} L${X(0).toFixed(1)},${(h - pad.b)} Z`;
+  const step = Math.max(1, Math.ceil(n / 8));
+  const labels = days.map((d, i) => (i % step === 0 || i === n - 1)
+    ? `<text x="${X(i)}" y="${h - pad.b + 16}" font-size="10" fill="#6b7280" text-anchor="middle">${d.date.slice(5)}</text>`
+    : "").join("");
+  const grid = [0, .5, 1].map(f => {
+    const y = pad.t + (h - pad.t - pad.b) * f, v = max * (1 - f);
+    return `<line x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}" stroke="#eef0f3"/>`
+         + `<text x="${pad.l - 8}" y="${y + 3}" font-size="10" fill="#6b7280" text-anchor="end">${Math.round(v)}</text>`;
+  }).join("");
+  const dots = vals.map((v, i) => `<circle cx="${X(i)}" cy="${Y(v)}" r="2" fill="#2563eb"/>`).join("");
+  return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="每日净营业额趋势">
+    ${grid}<path d="${area}" fill="#2563eb" opacity=".08"/>
+    <path d="${line}" fill="none" stroke="#2563eb" stroke-width="2"/>${dots}${labels}
+    <text x="${pad.l}" y="12" font-size="10" fill="#6b7280">每日净营业额（元）</text></svg>`;
+}
+
+async function loadQuality() {
+  try {
+    const q = await api("/api/data_quality");
+    const r = q.cleaning_report || {};
+    const removed = r.removed || {};
+    const items = Object.entries(removed)
+      .filter(([k]) => k !== "note_unparseable_amount")
+      .map(([k, v]) => `<div>${esc(k)}：<b>${int(v)}</b></div>`).join("");
+    $("quality").innerHTML = `
+      <div>原始 <b>${int(r.raw_rows)}</b> 行 → 保留 <b>${int(r.kept_rows)}</b> 行
+        （销售 ${int(r.kept_sales_rows)} + 退款 ${int(r.kept_refund_rows)}）</div>
+      <div class="meta">清洗掉的原因与行数：</div>
+      <div class="removed">${items}</div>
+      ${(q.kb_warnings || []).length ? `<div class="meta">知识库告警：${esc(q.kb_warnings.join("；"))}</div>` : ""}`;
+  } catch (e) { $("quality").innerHTML = `<span class="err">加载失败</span>`; }
+}
+
+// ---- 第三关：问答 -----------------------------------------------------------
+function newSession() {
+  sessionId = "web-" + Math.random().toString(36).slice(2, 10);
+  $("sid").textContent = sessionId;
+  $("chat").innerHTML = "";
+  $("trace").innerHTML = "";
+}
+
+async function ask() {
+  const q = $("question").value.trim();
+  if (!q) return;
+  $("send").disabled = true;
+  $("chat").innerHTML = `<div class="meta">正在查…</div>`;
+  try {
+    const r = await api("/api/chat", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_id: sessionId, question: q}),
+    });
+    const cites = (r.citations || []).map(c =>
+      `<blockquote><b>${esc(c.doc_id)}</b>　${esc(c.quote)}</blockquote>`).join("");
+    const ev = (r.data_evidence || []).map(e =>
+      `<details><summary>数据证据：${esc(e.tool)}</summary><pre>${esc(JSON.stringify(e, null, 2))}</pre></details>`).join("");
+    $("chat").innerHTML = `
+      <div class="meta">类型：<b>${esc(r.answer_type)}</b></div>
+      <div class="answer">${esc(r.answer)}</div>
+      ${cites ? `<div class="meta">文档引用（逐字）：</div>${cites}` : ""}
+      ${ev ? `<div class="meta">数据证据：</div>${ev}` : ""}`;
+    $("question").value = "";
+    loadTrace(r.trace_id);
+  } catch (e) {
+    $("chat").innerHTML = `<div class="err">提问失败：${esc(e.message)}</div>`;
+  } finally { $("send").disabled = false; }
+}
+
+// ---- 第四关：trace ---------------------------------------------------------
+async function loadTrace(traceId) {
+  if (!traceId) return;
+  $("trace").innerHTML = `<div class="meta">trace_id：${esc(traceId)}（加载中…）</div>`;
+  try {
+    const t = await api("/api/trace/" + encodeURIComponent(traceId));
+    const steps = Array.isArray(t.steps) ? t.steps : [];
+    const rows = steps.map(s => `<tr>
+      <td>${esc(s.name || s.step || "")}</td>
+      <td class="num">${s.ms === undefined ? (s.seconds === undefined ? "—" : s.seconds) : s.ms}</td>
+      <td><pre style="margin:0">${esc(JSON.stringify(s.detail ?? s, null, 1))}</pre></td></tr>`).join("");
+    $("trace").innerHTML = `
+      <div class="meta">trace_id：${esc(traceId)}　问题：${esc(t.question || "")}</div>
+      ${rows ? `<table><thead><tr><th>步骤</th><th class="num">耗时</th><th>详情</th></tr></thead><tbody>${rows}</tbody></table>` : ""}
+      <details><summary>原始 trace</summary><pre>${esc(JSON.stringify(t, null, 2))}</pre></details>`;
+  } catch (e) {
+    $("trace").innerHTML = `<div class="err">trace 加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+$("query").onclick = refresh;
+$("store").onchange = refresh;
+init();
+</script>
+</body>
+</html>
