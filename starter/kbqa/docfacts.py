@@ -263,9 +263,22 @@ class DocFacts:
         return "%s：%s。" % (cells[0], "，".join(pairs))
 
     def table_header_for(self, doc_id: str, line: str) -> list[str]:
+        # 去空白再比：表格行经过切块、HTML 剥标签之后，单元格之间的空格数
+        # 常常和原文不完全一致，严格相等会匹配不上——于是拿不到表头，
+        # render_row 只能原样吐出 `| P06 | 牛肉poke | ✓ | ✓ | — |` 这种原始行，
+        # 答案里自然不会出现"麸质/大豆/芝麻"（C02 就是这么挂的）。
+        # 注意语义：kind == "table" 的 unit 是**表头行**，它的 text 是表头，
+        # 跟数据行永远不相等。所以要的是"这一行所在的那张表的表头"——
+        # 也就是它前面最近的一个表头行，而不是 text 相等的 unit。
+        # 原先写成 text 相等，于是永远返回空表头，render_row 只能原样吐出
+        # `| P06 | 牛肉poke | ✓ | ✓ | — |`，答案里不会有"麸质/大豆/芝麻"。
+        target = "".join(line.split())
+        header: list[str] = []
         for unit in self.units(doc_id):
-            if unit.kind == "table" and unit.text == line.strip():
-                return unit.header
+            if unit.kind == "table" and unit.header:
+                header = unit.header
+            if "".join(unit.text.split()) == target:
+                return header
         return []
 
     def render(self, doc_id: str, sentence: str) -> str:
