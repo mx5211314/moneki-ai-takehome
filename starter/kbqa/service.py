@@ -153,7 +153,10 @@ class Service:
                 return Answer(answer="没有收到问题内容，请再说一次。", answer_type="clarify")
             history = self.sessions.history(session_id)
             started = time.perf_counter()
-            plan = self.planner.plan(question)
+            # history 必须交给规划器：追问（“那 7 月呢？”）要靠上一轮的
+            # standalone 与槽位还原。之前只把它传给 live 模式的 engine，
+            # mock 模式下规划器看到空历史，追问一律被判成 clarify。
+            plan = self.planner.plan(question, history)
             trace.step("plan", plan.as_trace(), started=started)
             answer = self._run_engine(plan, trace, history)
             self.sessions.append(
