@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import date
 from typing import Optional
@@ -24,8 +25,28 @@ VOCAB_SOFT_GATE = 0.45
 RETRIEVAL_SOFT_GATE = 12.0
 #: 问得太泛时的反问阈值：检索连一个像样的命中都没有。
 CLARIFY_SCORE = 8.0
-#: 拼给作答用的资料最长多少字，太长了没必要。
-MAX_CONTEXT_CHARS = 200
+#: 拼给作答用的资料最长多少字。契约硬上限是 answer 1200 字符，
+#: 这里留出余量给文档标题与版本说明。
+MAX_CONTEXT_CHARS = 600
+#: 契约硬上限：answer 1200 个字符，超出整题判不合格。
+ANSWER_LIMIT = 1200
+#: 契约硬上限：answer 里不同数字不超过 20 个（防刷分）。
+ANSWER_NUMBER_LIMIT = 20
+
+
+def _trim_answer(text: str) -> str:
+    """答案出口统一兜底。
+
+    超长直接判不合格，所以宁可截短也不冒险；数字个数同理——整篇文档倒进
+    答案时会带进来几十个无关数字。截断只发生在异常长的回答上，正常回答
+    离这些上限很远。
+    """
+    if len(text) > ANSWER_LIMIT:
+        text = text[: ANSWER_LIMIT - 1].rstrip() + "…"
+    numbers = set(re.findall(r"\d+(?:\.\d+)?", text))
+    if len(numbers) > ANSWER_NUMBER_LIMIT:
+        text = text[: ANSWER_LIMIT - 1].rstrip() + "…（数字过多已截断）"
+    return text
 
 
 class Answerer(HybridAnswers):
@@ -358,4 +379,9 @@ class Answerer(HybridAnswers):
                 answer_type="clarify",
                 notes=["检索最高分 %.1f，且问题里没有指标、时间或门店" % top_score],
             )
-        return Answer(answer=self._context(result) + body, answer_type="doc", citations=citations)
+        # 契约硬上限：answer 1200 个字符，超出整题直接判不合格。
+        # 原来这里拼的是 self._context(result) —— 把 top-1 命中的文档所有 chunk
+        # 原样倒进答案，动辄几千字（C05 到过 5718 字），稳稳踩线；而且答案里
+        # 会混入几十个与问题无关的数字，连“不同数字不超过 20 个”也一起超。
+        # 答案只放精选出来的句子（body），出口再统一兜一次底。
+        return Answer(answer=_trim_answer(body), answer_type="doc", citations=citations)
