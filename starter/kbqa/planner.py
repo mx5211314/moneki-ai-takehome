@@ -250,9 +250,14 @@ class Planner:
 
         # 路由：问“多少/多久/几”的就是要数字，问“为什么/原因”的就是要说法。
         # 两边都走一遍太慢，没必要。
-        if E.has_any(text, ("多少", "多久", "几")):
+        #
+        # 但问的是制度/规定时（上面已经判成 doc），那句“多久/多少”问的是条款
+        # 本身——“外卖订单多久内可以申请退款”“员工迟到多久算一次”——不是经营
+        # 数字。原来这里无条件改判成取数，于是跑去查全区间营业额，
+        # C01-C08、V01-V03 整片丢分就是这么来的。已经判成 doc 的不再推翻。
+        if plan.kind != "doc" and E.has_any(text, ("多少", "多久", "几")):
             plan.intent = "data"
-            if plan.kind in ("doc", "anomaly", "target", "price"):
+            if plan.kind in ("anomaly", "target", "price"):
                 plan.kind = "summary"
         elif E.has_any(text, ("为什么", "原因", "怎么回事", "咋回事")):
             plan.intent, plan.kind = "doc", "doc"
