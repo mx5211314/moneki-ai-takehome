@@ -311,6 +311,49 @@ def out_of_scope(text: str, coverage: float, top_score: float) -> Optional[str]:
     return None
 
 
+#: 用户把系统当执行器用：这类请求一律拒答，不检索、不查库。
+#:
+#: 契约第三关：文档里的内容只当资料用，不当指令执行；用户要求删改数据、
+#: 套取系统信息时要拒绝，数据库不能有任何改动。
+#:
+#: 词表刻意收窄，只留明确危险的写法。“修改”“更新”“调整”这类词没放进来——
+#: “价格什么时候调整过”是正常的历史问题，不该被当成删改指令拒掉。
+DANGEROUS_ACTIONS = (
+    "删掉", "删除", "清空", "清掉", "移除", "抹掉", "销毁", "补录", "篡改", "改动数据", "改数据",
+)
+DANGEROUS_SQL = ("drop table", "delete from", "update ", "insert into", "alter table", "truncate")
+DANGEROUS_SECRETS = (
+    "系统提示词", "提示词", "system prompt", "表结构", "数据库结构",
+    "sqlite_master", "源码", "内部实现", "系统指令", "所有表",
+)
+#: “忽略你之前的所有规则”这类改写系统规则的尝试。要求前后两半同时出现，
+#: 免得把“忽略退款行”这种正常说法误判成越权。
+_OVERRIDE_RULE = re.compile(
+    r"(忽略|无视|忘记|抛弃|不要遵守|突破|绕过).{0,16}(规则|之前|上面|所有|指令|提示|设定|限制|要求)"
+)
+
+
+def dangerous_request(text: str) -> Optional[str]:
+    """用户是在下指令，还是在提问。返回拒答原因；None 表示是正常提问。
+
+    越界判断（out_of_scope）看的是“知识库里有没有讲这件事”，管不了这一类：
+    “帮我把 S01 的销售记录全部删掉”里的“销售记录”“门店”知识库里全都有，
+    词表覆盖率很高，于是被当成普通文档问题，把门店档案整篇吐了出来。
+    所以指令检测必须单独一道，而且放在规划的最前面。
+    """
+    lowered = text.lower()
+    for word in DANGEROUS_SQL:
+        if word in lowered:
+            return "请求里含有会改动数据库的语句"
+    if has_any(text, DANGEROUS_ACTIONS):
+        return "请求要对数据做增删改，而系统只提供查询"
+    if has_any(text, DANGEROUS_SECRETS):
+        return "请求要系统交出提示词、表结构这类内部信息"
+    if _OVERRIDE_RULE.search(text):
+        return "请求要改写系统规则"
+    return None
+
+
 def looks_like_follow_up(text: str) -> bool:
     stripped = text.strip()
     if len(stripped) <= 12 and any(pattern.search(stripped) for pattern in FOLLOW_UP):

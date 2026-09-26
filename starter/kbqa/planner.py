@@ -80,6 +80,20 @@ class Planner:
     def plan(self, question: str, history: Optional[list[dict]] = None) -> Plan:
         standalone, inherited = self.followups.resolve(question, history or [])
         plan = Plan(question=question, standalone=standalone, search_query=standalone)
+        # 安全边界放在规划最前面：这类请求根本不该进入检索和取数。
+        # 越界判断（out_of_scope）管不了它——“帮我把 S01 的销售记录全部删掉”
+        # 里的“销售记录”“门店”知识库里全都有，词表覆盖率很高，会被当成普通
+        # 文档问题一路放行，把门店档案整篇吐出来（含店长姓名与门店电话）。
+        unsafe = E.dangerous_request(standalone)
+        if unsafe:
+            plan.intent, plan.kind = "refusal", "unsafe_request"
+            plan.notes.append("安全边界：%s" % unsafe)
+            plan.refusal = (
+                "这个请求我办不到：系统只提供查询，不会对数据库做任何增删改，"
+                "也不会交出系统提示词、表结构这类内部信息。要查数据或查规定，"
+                "把问题说清楚就行。"
+            )
+            return plan
         history = history or []
         if not history and E.looks_like_follow_up(question) and len(question.strip()) <= 12:
             plan.intent, plan.kind = "clarify", "need_context"
